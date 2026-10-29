@@ -2,6 +2,7 @@ import os
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 
 def compute_kl_divergence(p_data: torch.Tensor, q_data: torch.Tensor, num_bins: int = 50) -> float:
     """computes KL divergence between two PyTorch tensors"""
@@ -35,6 +36,7 @@ def compute_kl_divergence(p_data: torch.Tensor, q_data: torch.Tensor, num_bins: 
     kl = torch.sum(p_hist * torch.log(p_hist / q_hist))
     return float(kl.item())
 
+# used https://www.ibm.com/think/topics/autocorrelation for clarification
 def compute_autocorrelation(series: torch.Tensor, max_lag: int = 20) -> torch.Tensor:
     """computes autocorrelation function (ACF)"""
     n = series.numel()
@@ -51,7 +53,8 @@ def compute_autocorrelation(series: torch.Tensor, max_lag: int = 20) -> torch.Te
             
     return torch.tensor(acf, device=series.device)
 
-def compute_ssim_proxy(real_depth: torch.Tensor, synth_depth: torch.Tensor) -> float:
+# calculation done with the help of https://en.wikipedia.org/wiki/Structural_similarity_index_measure 
+def compute_ssim(real_depth: torch.Tensor, synth_depth: torch.Tensor) -> float:
     """computes a structural similarity (SSIM) proxy between mean volume depth heatmaps"""
     real_mean = real_depth.mean(dim=0)
     synth_mean = synth_depth.mean(dim=0)
@@ -72,7 +75,7 @@ def compute_ssim_proxy(real_depth: torch.Tensor, synth_depth: torch.Tensor) -> f
     ssim_val = ((2 * mu_x * mu_y + c1) * (2 * cov_xy + c2)) / ((mu_x**2 + mu_y**2 + c1) * (var_x + var_y + c2))
     return float(ssim_val.item())
 
-def check_crossed_book_violations(synthetic_data: torch.Tensor) -> float:
+def microstructure_invariant_violations(synthetic_data: torch.Tensor) -> float:
     """checks percentage of samples violating microstructure invariant (P_bid >= P_ask)"""
     violations = 0
     total_samples = synthetic_data.size(0)
@@ -86,19 +89,20 @@ def check_crossed_book_violations(synthetic_data: torch.Tensor) -> float:
             
     return (violations / total_samples) * 100.0
 
+
 def main():
     synthetic_path = 'output/synthetic_lob_train.pt'
     real_path = 'output/real_lob_test.pt'
 
     if not os.path.exists(synthetic_path) or not os.path.exists(real_path):
-        print("Error: PyTorch output files not found. Run train.py first!")
+        print("Error: PyTorch output files not found. Run train.py")
         return
 
-    synthetic_data = torch.load(synthetic_path)
+    synthetic_data = torch.load(synthetic_path, map_location=torch.device('cpu'))    
     real_data = torch.load(real_path)
 
     print(f"Loaded {synthetic_data.size(0)} synthetic windows and {real_data.size(0)} real test windows.")
-
+        
     real_returns = real_data[:, :, 0].reshape(-1)
     synth_returns = synthetic_data[:, :, 0].reshape(-1)
 
@@ -111,11 +115,11 @@ def main():
     acf_mse = torch.mean((real_acf - synth_acf) ** 2).item()
     print(f"\nautocorrelation MSE: {acf_mse:.6f}")
     
-    ssim_score = compute_ssim_proxy(real_data, synthetic_data)
-    print(f"\ndepth heatmap SSIM proxy: {ssim_score:.4f}")
+    ssim_score = compute_ssim(real_data, synthetic_data)
+    print(f"\ndepth heatmap SSIM: {ssim_score:.4f}")
 
-    violation_pct = check_crossed_book_violations(synthetic_data)
-    print(f"\ncrossed book arbitrage violations: {violation_pct:.2f}%")
+    violation_pct = microstructure_invariant_violations(synthetic_data)
+    print(f"\nmicrostructure invariant violations: {violation_pct:.2f}%")
 
     os.makedirs('output', exist_ok=True)
     plt.figure(figsize=(8, 4))
@@ -129,7 +133,6 @@ def main():
     plt.tight_layout()
     plt.savefig('output/acf_comparison.png', dpi=300)
     plt.close()
-    print(" -> saved ACF plot to output/acf_comparison.png") 
 
 if __name__ == '__main__':
     main()
