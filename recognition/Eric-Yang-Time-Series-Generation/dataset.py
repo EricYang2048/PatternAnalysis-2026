@@ -1,99 +1,70 @@
-import numpy as np
-import pandas as pd
-from utils import extract_time
+# dataset.py
+import csv
+import torch
 
-def load_lobster_csv(message_path: str, orderbook_path: str, nrows: int = None):    
-    obs = pd.read_csv(orderbook_path, header=None, nrows=nrows)
-    msgs = pd.read_csv(message_path, header=None, nrows=nrows)
-    
-    # message file has 6 columns: [Time, Type, Order ID, Size, Price, Direction]
-    # orderbook file has 40 columns for Level 10
-    # we combine message timestamp/type with the order book depth features
-    combined = pd.concat([msgs.iloc[:, :2], obs], axis=1)
-    return combined.values
+def load_lobster_csv(message_path: str, orderbook_path: str, nrows: int = None) -> torch.Tensor:
+    """loads message and orderbook CSV files and combines them"""
+    obs_rows = []
+    with open(orderbook_path, mode='r') as f:
+        reader = csv.reader(f)
+        for i, row in enumerate(reader):
+            if nrows is not None and i >= nrows:
+                break
+            float_row = [float(val) for val in row if val.strip() != '']
+            if float_row:
+                obs_rows.append(float_row)
 
-def preprocess_lob_data(raw_data: np.ndarray):
-    data = raw_data.copy()
+    msgs_rows = []
+    with open(message_path, mode='r') as f:
+        reader = csv.reader(f)
+        for i, row in enumerate(reader):
+            if nrows is not None and i >= nrows:
+                break
+            float_row = [float(val) for val in row[:2] if val.strip() != '']
+            if float_row:
+                msgs_rows.append(float_row)
+
+    min_len = min(len(obs_rows), len(msgs_rows))
+    obs_tensor = torch.tensor(obs_rows[:min_len], dtype=torch.float32)
+    msgs_tensor = torch.tensor(msgs_rows[:min_len], dtype=torch.float32)
     
-    # orderbook columns start at index 2
-    ob_cols = data[:, 2:]
-    
-    ask_prices_list = []
-    bid_prices_list = []
-    ask_volumes_list = []
-    bid_volumes_list = []
-    
-    for i in range(10):
-        # 4 columns per level: index 0 (Ask Price), index 1 (Ask Size), index 2 (Bid Price), index 3 (Bid Size)
-        base_idx = i * 4
-        
-        # extract and scale prices from LOBSTER format (divide by 10000)
-        a_price = ob_cols[:, base_idx] / 10000.0
-        a_size  = ob_cols[:, base_idx + 1]
-        b_price = ob_cols[:, base_idx + 2] / 10000.0
-        b_size  = ob_cols[:, base_idx + 3]
-        
-        # handle unoccupied price levels (LOBSTER dummy values: 9999999999 / -9999999999)
-        a_price = np.where(a_price > 1e6, np.nan, a_price)
-        b_price = np.where(b_price < -1e6, np.nan, b_price)
-        
-        ask_prices_list.append(a_price)
-        bid_prices_list.append(b_price)
-        ask_volumes_list.append(a_size)
-        bid_volumes_list.append(b_size)
-        
-    ask_prices = np.column_stack(ask_prices_list)
-    bid_prices = np.column_stack(bid_prices_list)
-    ask_volumes = np.column_stack(ask_volumes_list)
-    bid_volumes = np.column_stack(bid_volumes_list)
-    
-    # fill any NaN values resulting from unoccupied levels forward or with zeros
-    ask_prices = pd.DataFrame(ask_prices).ffill().bfill().values
-    bid_prices = pd.DataFrame(bid_prices).ffill().bfill().values
-    
-    # compute log-returns for Level 1 best ask and bid prices
-    best_ask_returns = np.diff(np.log(np.maximum(ask_prices[:, 0], 1e-8)))
-    best_ask_returns = np.hstack([[0.0], best_ask_returns])
-    
-    best_bid_returns = np.diff(np.log(np.maximum(bid_prices[:, 0], 1e-8)))
-    best_bid_returns = np.hstack([[0.0], best_bid_returns])
-    
-    # mormalise volumes across all 10 levels using z-score standardisation
-    all_volumes = np.hstack([ask_volumes, bid_volumes])
-    vol_mean = np.mean(all_volumes, axis=0)
-    vol_std = np.std(all_volumes, axis=0) + 1e-8
-    norm_volumes = (all_volumes - vol_mean) / vol_std
-    
-    # combine returns and normalized volumes into final feature matrix
-    processed_data = np.column_stack([best_ask_returns, best_bid_returns, norm_volumes])
+    return torch.cat([msgs_tensor, obs_tensor], dim=1)
+
+def preprocess_lob_data(raw_data: torch.Tensor) -> torch.Tensor:
+    """normalises limit order book data"""
+    data_min = raw_data.min(dim=0, keepdim=True).values
+    data_max = raw_data.max(dim=0, keepdim=True).values
+    processed_data = (raw_data - data_min) / (data_max - data_min + 1e-8)
     return processed_data
 
-def create_sliding_windows(data: np.ndarray, seq_len: int = 24, step: int = 1):
+def create_sliding_windows(data: torch.Tensor, seq_len: int = 20, step: int = 1) -> torch.Tensor:
+    """creates sliding windows"""
     sequences = []
-    total_len = len(data)
-    
+    total_len = data.size(0)
+    if total_len < seq_len:
+        return torch.empty(0, seq_len, data.size(1))
     for i in range(0, total_len - seq_len + 1, step):
-        seq = data[i : i + seq_len, :]
-        sequences.append(seq)
-        
-    return sequences
+        sequences.append(data[i : i + seq_len])
+    return torch.stack(sequences) if sequences else torch.empty(0)
 
-def chronological_train_test_split(sequences: list, train_rate: float = 0.8):
-    split_idx = int(len(sequences) * train_rate)
-    
-    train_data = sequences[:split_idx]
-    test_data = sequences[split_idx:]
-    
-    return train_data, test_data
+def extract_time_tensor(data_tensor: torch.Tensor):
+    """returns valid time tensors for sliding windows"""
+    batch_size = data_tensor.size(0)
+    seq_len = data_tensor.size(1)
+    time_tensor = torch.full((batch_size,), seq_len, dtype=torch.int32)
+    return time_tensor, seq_len
 
-def get_lobster_timeseries_dataset(message_path: str, orderbook_path: str, seq_len: int = 24, train_rate: float = 0.8, nrows: int = None):
+def get_lobster_timeseries_dataset(message_path: str, orderbook_path: str, seq_len: int = 20, train_rate: float = 0.8, nrows: int = None):
+    """loads and preprocesses the LOBSTER dataset"""
     raw_data = load_lobster_csv(message_path, orderbook_path, nrows=nrows)
     processed_data = preprocess_lob_data(raw_data)
-    sequences = create_sliding_windows(processed_data, seq_len=seq_len)
+    sequences_tensor = create_sliding_windows(processed_data, seq_len=seq_len)
+
+    split_idx = int(sequences_tensor.size(0) * train_rate)
+    train_data = sequences_tensor[:split_idx]
+    test_data = sequences_tensor[split_idx:]
     
-    train_data, test_data = chronological_train_test_split(sequences, train_rate=train_rate)
-    
-    train_time, _ = extract_time(train_data)
-    test_time, _ = extract_time(test_data)
+    train_time, _ = extract_time_tensor(train_data)
+    test_time, _ = extract_time_tensor(test_data)
     
     return train_data, test_data, train_time, test_time
