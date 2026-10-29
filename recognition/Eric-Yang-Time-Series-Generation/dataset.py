@@ -1,34 +1,27 @@
-# dataset.py
-import csv
+import pandas as pd
 import torch
 
-def load_lobster_csv(message_path: str, orderbook_path: str, nrows: int = None) -> torch.Tensor:
-    """loads message and orderbook CSV files and combines them"""
-    obs_rows = []
-    with open(orderbook_path, mode='r') as f:
-        reader = csv.reader(f)
-        for i, row in enumerate(reader):
-            if nrows is not None and i >= nrows:
-                break
-            float_row = [float(val) for val in row if val.strip() != '']
-            if float_row:
-                obs_rows.append(float_row)
+def load_lobster_csv(orderbook_path: str, nrows: int = None) -> torch.Tensor:
+    """load the orderbook CSV file and computes features"""
+    obs_df = pd.read_csv(orderbook_path, header=None, nrows=nrows)
+    obs_tensor = torch.tensor(obs_df.values, dtype=torch.float32)
 
-    msgs_rows = []
-    with open(message_path, mode='r') as f:
-        reader = csv.reader(f)
-        for i, row in enumerate(reader):
-            if nrows is not None and i >= nrows:
-                break
-            float_row = [float(val) for val in row[:2] if val.strip() != '']
-            if float_row:
-                msgs_rows.append(float_row)
-
-    min_len = min(len(obs_rows), len(msgs_rows))
-    obs_tensor = torch.tensor(obs_rows[:min_len], dtype=torch.float32)
-    msgs_tensor = torch.tensor(msgs_rows[:min_len], dtype=torch.float32)
+    ask_price_1 = obs_tensor[:, 0] / 10000.0
+    bid_price_1 = obs_tensor[:, 2] / 10000.0
+    mid_price = (ask_price_1 + bid_price_1) / 2.0
     
-    return torch.cat([msgs_tensor, obs_tensor], dim=1)
+    returns = torch.zeros_like(mid_price)
+    returns[1:] = torch.log(mid_price[1:] / (mid_price[:-1] + 1e-8))
+    spread = (ask_price_1 - bid_price_1)
+
+    # Combine returns, spread, and orderbook data columns
+    combined = torch.cat([
+        returns.unsqueeze(1),
+        spread.unsqueeze(1),
+        obs_tensor
+    ], dim=1)
+    
+    return combined
 
 def preprocess_lob_data(raw_data: torch.Tensor) -> torch.Tensor:
     """normalises limit order book data"""
@@ -54,9 +47,9 @@ def extract_time_tensor(data_tensor: torch.Tensor):
     time_tensor = torch.full((batch_size,), seq_len, dtype=torch.int32)
     return time_tensor, seq_len
 
-def get_lobster_timeseries_dataset(message_path: str, orderbook_path: str, seq_len: int = 20, train_rate: float = 0.8, nrows: int = None):
+def get_lobster_timeseries_dataset(orderbook_path: str, seq_len: int = 20, train_rate: float = 0.8, nrows: int = None):
     """loads and preprocesses the LOBSTER dataset"""
-    raw_data = load_lobster_csv(message_path, orderbook_path, nrows=nrows)
+    raw_data = load_lobster_csv(orderbook_path, nrows=nrows)
     processed_data = preprocess_lob_data(raw_data)
     sequences_tensor = create_sliding_windows(processed_data, seq_len=seq_len)
 

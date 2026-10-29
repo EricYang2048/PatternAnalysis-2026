@@ -9,7 +9,7 @@ from dataset import get_lobster_timeseries_dataset
 def main():
     # hyperparameters
     BATCH_SIZE = 64
-    SEQ_LEN = 50
+    SEQ_LEN = 24
     HIDDEN_DIM = 32
     NOISE_DIM = 32
     NUM_LAYERS = 2
@@ -27,19 +27,18 @@ def main():
     print(f"Using device: {device}")
 
     # load and preprocess LOBSTER dataset
-    print('Loading dataset...')
+    print('loading dataset')
     train_data, test_data, train_time, test_time = get_lobster_timeseries_dataset(
-        message_path=message_path, 
         orderbook_path=orderbook_path, 
         seq_len=SEQ_LEN, 
         train_rate=train_rate,
-        nrows=100000
+        nrows=50000
     )
 
     input_dim = train_data.size(-1)
-    print(f"Dataset loaded! Train data shape: {train_data.shape}, Input Dim: {input_dim}")
+    print(f"dataset loaded train data shape: {train_data.shape}, input dim: {input_dim}")
 
-    # initialize timeGAN model
+    # initialise timeGAN model
     model = TimeGAN(
         input_dim=input_dim, 
         hidden_dim=HIDDEN_DIM, 
@@ -60,7 +59,7 @@ def main():
     # generate synthetic time-series data
     print('generating synthetic sequences')
     synthetic_data = model.generate(
-        num_samples=train_data.size(0), 
+        num_samples=40, 
         seq_len=SEQ_LEN, 
         device=device
     )
@@ -75,17 +74,7 @@ def main():
     
     plt.figure(figsize=(12, 5))
     
-    # plot real vs synthetic mid-price returns
-    plt.subplot(1, 2, 1)
-    plt.plot(train_data[0][:, 0].detach().cpu(), label='Real Return', color='blue', alpha=0.7)
-    plt.plot(synthetic_data[0][:, 0].detach().cpu(), label='Synthetic Return', color='orange', alpha=0.7)
-    plt.title('Real vs Synthetic Mid-Price Returns')
-    plt.xlabel('Time Step')
-    plt.ylabel('Log-Return')
-    plt.legend()
-    
     # plot spread comparison or cumulative volume
-    plt.subplot(1, 2, 2)
     plt.plot(train_data[0].mean(dim=1).detach().cpu(), label='Real Mean Depth', color='blue', alpha=0.7)
     plt.plot(synthetic_data[0].mean(dim=1).detach().cpu(), label='Synthetic Mean Depth', color='orange', alpha=0.7)
     plt.title('Real vs Synthetic Depth Profile')
@@ -96,7 +85,6 @@ def main():
     plt.tight_layout()
     plt.savefig('output/train_metrics_comparison.png', dpi=300)
     plt.close()
-    print(" -> Saved evaluation plot to output/train_metrics_comparison.png")
     print("Training pipeline successfully finished!")
 
 if __name__ == '__main__':
