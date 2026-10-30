@@ -1,3 +1,4 @@
+import os
 import time
 import torch
 import matplotlib.pyplot as plt
@@ -16,7 +17,7 @@ def main():
     NROWS=10000
     train_rate = 0.8
     
-    # paths for dataset
+    # put your pathes for the dataset here
     orderbook_path = 'LOBSTER_SampleFile_AMZN_2012-06-21_10/AMZN_2012-06-21_34200000_57600000_orderbook_10.csv'
     # message csv not used for this implementation, but can be used for more complex implementations
     message_path = 'LOBSTER_SampleFile_AMZN_2012-06-21_10/AMZN_2012-06-21_34200000_57600000_message_10.csv'
@@ -26,7 +27,7 @@ def main():
 
     # use gpu
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    print(f"using device: {device}")
 
     # load and preprocess LOBSTER dataset
     print('loading dataset')
@@ -69,6 +70,10 @@ def main():
         device=device
     )
     generate_end = time.perf_counter()
+
+    os.makedirs('output', exist_ok=True)
+    torch.save(synthetic_data, 'output/synthetic_lob_train.pt')
+    torch.save(test_data, 'output/real_lob_test.pt')
 
     end = time.perf_counter()
     print(f"Pipeline finished in {end - start:.2f} seconds.")

@@ -72,7 +72,9 @@ TimeGAN is a generative time-series model, trained using a learned embedding spa
 **Preliminary Feasibility Evidence:**
 A initial data audit was conducted, and the dataset was successfully downloaded from https://php.lobsterdata.com/info/DataSamples.php. A simple smoke test was run, to check if the model can train and generate synthetic data, this was the output:
 
- ![alt text](image.png)
+<div align="center">
+<img src="images/image.png">
+</div>
 
 **Risks, Budget & Fallback:**
 The key technical risks for this project are the model results not being able to reproduce volatility clustering and collapsing into uncorrelated noise and not strictly conforming to hard economic and physical microstructure laws (price of bid < price of ask). The computing budget is the computational limit of the rangpur HPC clusters. As, those clusters will be used for all training and testing that require large amounts of computation. The next planned experiment is to implement the data pipeline and chronological integrity by applying log-returns transformation for prices and normalisation. Additionally, we should enforce strict chronological splitting to eliminate look-ahead bias. If the model is unable to produce reasonable results, the workable fallback is simplifying the adversarial network topology or reducing the depth from 10 to a lower number.
@@ -453,4 +455,4 @@ All packages installed via pip
 6. eriklindernoren (2019) Pytorch-Gan/implementations/gan at master · eriklindernoren/pytorch-gan, GitHub. Available at: https://github.com/eriklindernoren/PyTorch-GAN/tree/master/implementations/gan
 
 ## Artificial Intelligence Usage Disclosure
-Artifical intelligence was used in the form of Google Gemini to generate the a list of possible heatmaps for this project, 3 were chosen in terms of usefulness and simplicity. Gemini was also used for research and clarification, and generating matplotlib plots. 
+Artifical intelligence was used in the form of Google Gemini to generate the a list of possible heatmaps for this project, 3 were chosen in terms of usefulness and simplicity. Gemini was also used for research, clarification, and generating matplotlib plots. 
