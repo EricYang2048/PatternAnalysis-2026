@@ -443,6 +443,9 @@ All packages installed via pip
     python train.py
     python predict.py
 
+**Dataset Info**
+
+The dataset should be loaded locally by train.py. There is no python library for the LOBSTER datasets. For this implementation, there exist a folder with the csv files in the same folder as train.py. The dataset ican be downloaded from https://php.lobsterdata.com/info/DataSamples.php
 
 
 ## References
